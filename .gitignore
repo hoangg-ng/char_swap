@@ -1,0 +1,56 @@
+# environment and upstream checkouts
+.venv/
+ComfyUI/
+__pycache__/
+*.pyc
+
+# model weights (base models in MODELS_BASE / ./checkpoints, LoRAs in models/loras)
+models/
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+
+# runtime scratch and logs
+.comfy_tmp/
+outputs/
+*.log
+
+# per-case media: personal photos, source videos and generated results stay local
+cases/*/input/
+cases/*/output/
+
+# third-party material (not ours to redistribute)
+third_party_review/
+legacy/workflows/
+
+# web UI login
+.ui_password
+cases/*/output/_ui_logs/
+characters/
+.worker.env
+_hidden/
+comparisons/
+
+# --- kept out of the public repo ---
+# test cases (videos, photos, per-case settings and tools) and study notes
+cases/
+log.md
+# research / experiment tools and benchmarks (relighting, expression transfer, Wan-Animate tests, speed runs)
+utils/face_light.py
+utils/expression_transfer.py
+utils/wan_animate.py
+utils/flashrelight_bridge.py
+scripts/get_wan_animate.sh
+benchmarks/
+compare*/
+# web demo stack (queue worker, message contracts, demo launchers) and its secrets
+contracts/
+worker/
+scripts/start_demo.sh
+scripts/start_worker.sh
+.env
+.env.*
+*.env.local
+# local model storage link
+checkpoints
