@@ -1,19 +1,10 @@
-# Character swap: MiniMax H3 + BFS + Realism
+# Character swap with MiniMax H3
 
 Replace **one chosen person** in a video with a new character built from reference photos. Everyone else, the
 background, the camera and the motion stay as in the source video. The heavy models run in ComfyUI; the pipeline
 around them (cuts, target detection, references, assembly, face refinement) is plain Python.
 
 Each video is a **case** folder with its own inputs, settings and outputs:
-
-```
-cases/<name>/input/     source video, character photo(s), optional face crop of the person to replace
-cases/<name>/case.env   settings (paths relative to the case folder)
-cases/<name>/output/    <JOB>/shotNN/...  (per-shot generations)   <OUT>/swapped.mp4  (result)
-```
-
-Please use it responsibly: only with footage and photos you have the rights and the consent to use, and never to
-pass generated video off as real footage of a real person.
 
 ## Pipeline
 
@@ -32,14 +23,14 @@ pass generated video off as real footage of a real person.
 
 | # | Step | Component | What it does |
 |---|---|---|---|
-| 0 | **Character sheet** | `utils/make_char_sheet.py`, `utils/sheet_refs.py` | Renders the character from several angles with Qwen-Image-2.1 + a 4-step Lightning LoRA. Stage 1 makes a clean front view from the cut-out and face photo (dressed in the video's outfit with `KEEP_OUTFIT=1`); stage 2 makes one character sheet from it. The panels are found automatically and sorted into main / extra / back / face references. Built once per character and reused. |
-| 1 | **Shot split** | `bfs_full.py` | Cuts the clip (`CUTS`, or `auto`), converts to 24 fps and to the generation size (short side 480), adds lead frames and pads to H3's frame grid. Shots run in parallel, one ComfyUI server per GPU. |
-| 2 | **Target check** | `bfs_full.py` (insightface, YOLO11) | `PRESENCE=face`: a shot is generated only where the person to replace is seen (ArcFace match against `TARGET_FACE`), because the swap LoRA always replaces the most visible person. `person` / `head` (single-person videos): shots are split into segments with and without her; segments with only a sleeve or a silhouette stay source. |
+| 0 | **Character sheet** | `utils/make_char_sheet.py`, `utils/sheet_refs.py` | Renders the character from several angles with Qwen-Image-2.1 + a 4-step Lightning LoRA. Stage 1 makes a clean front view from the cut-out and face photo (dressed in the video's outfit with `KEEP_OUTFIT=1`); stage 2 makes one character sheet from it.
+| 1 | **Shot split** | `bfs_full.py` | Cuts the clip and converts to 24 fps and to the generation size, adds lead frames and pads to H3's frame grid. Shots run in parallel, one ComfyUI server per GPU. |
+| 2 | **Target check** | `bfs_full.py` (insightface, YOLO11) | a shot is generated only where the person to replace is seen (ArcFace match against `TARGET_FACE`), because the swap LoRA always replaces the most visible person. Shots are split into segments with and without her; segments with only a sleeve or a silhouette stay source. |
 | 3 | **References** | `utils/scene_color.py` | Recolours the references toward each shot's light, with colour statistics from the scene without people, so the original person's clothes cannot tint the new character. |
-| 4 | **Guide** | `bfs_full.py` | The original shot is the guide video. The original person's face is softened in it, so the model takes the face from the references instead of copying it (`SOFT_FACE_MARKS=1` keeps painted marks and tears). |
+| 4 | **Guide** | `bfs_full.py` | The original shot is the guide video. The original person's face is softened in it, so the model takes the face from the references instead of copying it.|
 | 5 | **Lock the others** (`PROTECT`) | SAM 3.1 | Tracks the people to keep and applies the inverted mask as the latent edit mask, so they cannot change. `SUBJECT` does the opposite: only that person is edited. |
-| 6 | **Generation** | MiniMax H3 ref2va + BFS v1.1 + Turbo LoRA | The references become `<Picture 1..N>`; the prompt is the BFS `body_swap:` template with the character's head-to-toe description. 4 sampling steps with the Turbo LoRA (an 8-step DMD LoRA is optional). |
-| 7 | **Upscale** (`UPSCALE`) | H3 latent upscaler + refine pass | The latent is upscaled x1.5 (480p -> 720p) and refined at the new size; the Realism People LoRA runs in this pass. |
+| 6 | **Generation** | MiniMax H3 ref2va + BFS v1.1 + Turbo LoRA | 4 sampling steps with the Turbo LoRA (an 8-step DMD LoRA is optional). |
+| 7 | **Upscale** (optional) | H3 latent upscaler + refine pass | The latent is upscaled x1.5 (480p -> 720p) and refined at the new size; the Realism People LoRA runs in this pass. |
 | 8 | **Assembly** | `assemble_bfs.py` | Drops the lead frames, scales back to the source size, restores letterbox bars, and applies two light rules: a backlit silhouette keeps the original's darkness, and a character drawn far too bright in a dark scene is toned down. Only lightness is matched, never the original person's colours. |
 | 9 | **FaceRefine + identity guard** | `utils/face_refine.py` | Per shot: tracks the face, re-renders the face crop at a larger size and pastes it back. The guard compares each refined frame with the frame before refinement (ArcFace similarity to the character's face photo) and cross-fades back where the refined face is worse. Runs last. |
 
@@ -62,8 +53,6 @@ Accept the MiniMax H3 licence on Hugging Face first, then:
 HF_TOKEN=<your token> bash scripts/setup.sh              # ComfyUI, custom nodes, Python deps, all model weights
 HF_TOKEN=<your token> bash scripts/download_models.sh    # weights only (skips files already present)
 ```
-Base models go to `MODELS_BASE` (default `./checkpoints`; make it a link if your large storage is elsewhere);
-LoRAs go to `models/loras/`. `scripts/setup.sh` writes `ComfyUI/extra_model_paths.yaml` for both.
 
 Models:
 - MiniMax H3: `minimax_h3_ref2va_pruned_int8_convrot`, `qwen3vl_32b_minimax_h3_nvfp4_awq`, video/audio VAEs
@@ -77,34 +66,6 @@ Models:
 - YOLO11 `yolo11m.pt`, `yolo11m-pose.pt`, `yolo11m-seg.pt`; insightface `buffalo_l` is fetched on first use
 - custom nodes installed by `scripts/setup.sh`: `akatz-ai/h3-relay`, `Carasibana/ComfyUI-H3-FaceRefine`,
   `LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler`
-
-Keep only `onnxruntime-gpu` installed: the CPU `onnxruntime` package hides it and insightface falls back to the CPU.
-
-## Usage
-Start one ComfyUI server per GPU (they load the models once and stay up):
-```bash
-GPU=0 PORT=8188 bash scripts/start_comfy.sh
-GPU=1 PORT=8189 bash scripts/start_comfy.sh     # and so on; COMFY_URLS lists them for run_swap.sh
-```
-Create a case (`cases/<name>/case.env`, paths relative to the case folder):
-```bash
-VIDEO=${VIDEO:-input/video.mp4}
-CROP=${CROP-auto}                                     # remove black bars if any
-SHEET_PERSON=${SHEET_PERSON:-input/char_cutout.png}   # full-body cut-out of the new character (on white)
-SHEET_FACE=${SHEET_FACE:-input/char_face.png}         # her face photo (large, sharp face works best)
-CHAR_DETAILS=${CHAR_DETAILS:-"Female, ..., hair ..., wearing ..."}   # head-to-toe description, gender first
-KEEP_OUTFIT=${KEEP_OUTFIT:-0}                         # 1 = she wears the video's clothes
-TARGET_TEXT=${TARGET_TEXT:-"the woman in the red dress"}
-PRESENCE=${PRESENCE:-head}                            # one person in the video; face + TARGET_FACE if several
-PROTECT=${PROTECT-}                                   # people to keep unchanged, e.g. "man"
-```
-Run it:
-```bash
-CASE=cases/<name> bash scripts/run_swap.sh                 # standard: 720p
-CASE=cases/<name> UPSCALE=0 bash scripts/run_swap.sh       # quick test at 480p
-CASE=cases/<name> CHECK_ONLY=1 bash scripts/run_swap.sh    # cuts + per-shot decisions only (no GPU)
-```
-The result is `cases/<name>/output/<OUT>/swapped.mp4`.
 
 ## Settings
 Any setting can be set in `case.env` or overridden on the command line (`CASE=cases/<name> SEED=7 bash scripts/run_swap.sh`).
@@ -139,11 +100,7 @@ Any setting can be set in `case.env` or overridden on the command line (`CASE=ca
 
 Per-shot overrides go in `output/<JOB>/shot_edits.json`, e.g. `{"13": {"tone": 0.5}, "4": {"soft_face_scale": 0.08}}`.
 
-## Credits
-- **Closest work:** T. H. Le, C. Charrier, E. Giguet, M. Bérubé, *Retinex-guided Relighting and Latent-Space Refinement
-  for Realistic Diffusion-based Face Swapping*, Electronic Imaging 2026.
-- **Lighting:** Retinex-style illumination removal (after the work above) in `utils/face_marks.py`, so harsh light
-  does not hide the original's facial marks (`SOFT_FACE_MARKS=1`).
+## References
 - **Swap LoRA:** BFS v1.1 by [Alissonerdx](https://huggingface.co/Alissonerdx/Minimax-H3-ComfyUI).
 - **FaceRefine:** [Carasibana/ComfyUI-H3-FaceRefine](https://github.com/Carasibana/ComfyUI-H3-FaceRefine).
 - **Realism LoRA:** [fal/MiniMax-H3-Realism-People-LoRA](https://huggingface.co/fal/MiniMax-H3-Realism-People-LoRA).
